@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>RDA AI Nutrition Planner Game</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet"/>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Nunito', sans-serif; }
+    body { background: #fdf6f0; }
+    .hov:hover { transform: scale(1.04) !important; filter: brightness(1.06) !important; }
+    .foodbtn:hover { border-color: #ffab91 !important; background: #ffd8b855 !important; transform: scale(1.02); }
+    .foodbtn { transition: all 0.13s ease; }
+    input:focus { outline: 2px solid #b8f0e0 !important; border-color: #b8f0e0 !important; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #f0e6dc; }
+    ::-webkit-scrollbar-thumb { background: #ffd8b8; border-radius: 3px; }
+    @keyframes blob0 { to { transform: translateY(-18px); } }
+    @keyframes blob1 { to { transform: translateY(18px) translateX(12px); } }
+    @keyframes blob2 { to { transform: translateY(-14px) translateX(-10px); } }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes fadeSlideIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+    .tooltip-panel { animation: fadeSlideIn 0.2s ease; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+const P = {
+  bg:"#fdf6f0", surface:"#fffaf6", card:"#ffffff", border:"#f0e6dc",
+  mint:"#b8f0e0", rose:"#fbc8d4", sky:"#bde4f7", lemon:"#fef3a0",
+  lavender:"#ddd4f7", peach:"#ffd8b8", sage:"#c8e6c9", coral:"#ffab91",
+  blush:"#f8c8d8", text:"#4a3f38", muted:"#9a8a80", deep:"#7a5c52",
+};
+
+const RDA_META = {
+  iron:      { unit:"mg",  label:"Iron",      emoji:"🔴", color:"#ffb3b3", dark:"#c0392b" },
+  calcium:   { unit:"mg",  label:"Calcium",   emoji:"🦴", color:"#bde4f7", dark:"#2980b9" },
+  vitaminA:  { unit:"mcg", label:"Vitamin A", emoji:"🥕", color:"#ffd8a8", dark:"#e67e22" },
+  vitaminC:  { unit:"mg",  label:"Vitamin C", emoji:"🍊", color:"#c8e6c9", dark:"#27ae60" },
+  vitaminD:  { unit:"mcg", label:"Vitamin D", emoji:"☀️", color:"#fef3a0", dark:"#f39c12" },
+  protein:   { unit:"g",   label:"Protein",   emoji:"💪", color:"#ddd4f7", dark:"#8e44ad" },
+};
+
+const RDA_TARGETS = {
+  young_female:   { iron:18, calcium:1000, vitaminA:700,  vitaminC:75,  vitaminD:15, protein:46 },
+  young_male:     { iron:8,  calcium:1000, vitaminA:900,  vitaminC:90,  vitaminD:15, protein:56 },
+  pregnant:       { iron:27, calcium:1000, vitaminA:770,  vitaminC:85,  vitaminD:15, protein:71 },
+  elderly_female: { iron:8,  calcium:1200, vitaminA:700,  vitaminC:75,  vitaminD:20, protein:46 },
+  child:          { iron:10, calcium:1300, vitaminA:600,  vitaminC:65,  vitaminD:15, protein:34 },
+  athlete_male:   { iron:8,  calcium:1000, vitaminA:900,  vitaminC:90,  vitaminD:15, protein:75 },
+};
+
+// ── EXPANDED FOOD DATABASE ──────────────────────────────────────────────────
+// Each food has: label, iron, calcium, vitaminA, vitaminC, vitaminD, protein
+//               calories, carbs, fat, fiber, category, benefits[], warning?
+const FOODS = {
+  // ── PROTEINS ──
+  eggs:           { label:"🥚 Eggs (2)",           iron:1.8,  calcium:56,   vitaminA:149,  vitaminC:0,   vitaminD:2.4,  protein:12,  calories:155, carbs:1.1,  fat:10.6, fiber:0,   category:"Protein",    benefits:["Complete protein","Choline for brain","Vitamin D source"],  tip:"Best absorbed with vitamin C foods" },
+  chicken:        { label:"🍗 Chicken (100g)",      iron:1.3,  calcium:11,   vitaminA:9,    vitaminC:0,   vitaminD:0.1,  protein:27,  calories:165, carbs:0,    fat:3.6,  fiber:0,   category:"Protein",    benefits:["Lean high protein","B vitamins","Selenium"],              tip:"Skinless breast is lowest in fat" },
+  beef:           { label:"🥩 Beef (100g)",          iron:2.7,  calcium:18,   vitaminA:8,    vitaminC:0,   vitaminD:0.1,  protein:26,  calories:250, carbs:0,    fat:17,   fiber:0,   category:"Protein",    benefits:["Heme iron (best absorbed)","Zinc","B12"],                tip:"Red meat iron is 2–3× more absorbable than plant iron" },
+  salmon:         { label:"🐟 Salmon (100g)",        iron:0.3,  calcium:12,   vitaminA:50,   vitaminC:0,   vitaminD:9.9,  protein:25,  calories:208, carbs:0,    fat:13,   fiber:0,   category:"Protein",    benefits:["Best vitamin D food","Omega-3 fatty acids","Heart health"], tip:"Wild-caught has higher omega-3s" },
+  tuna:           { label:"🐠 Tuna (100g canned)",   iron:1.3,  calcium:10,   vitaminA:20,   vitaminC:0,   vitaminD:3.8,  protein:26,  calories:132, carbs:0,    fat:2.9,  fiber:0,   category:"Protein",    benefits:["Low-fat protein","Vitamin D","Selenium"],                tip:"In water is lower calories than in oil" },
+  sardines:       { label:"🐟 Sardines (100g)",      iron:2.9,  calcium:382,  vitaminA:27,   vitaminC:0,   vitaminD:4.8,  protein:25,  calories:208, carbs:0,    fat:11.5, fiber:0,   category:"Protein",    benefits:["Calcium from edible bones","Omega-3","Vitamin D"],       tip:"Eat with the bones for max calcium!" },
+  lentils:        { label:"🫘 Lentils (½ cup)",      iron:3.3,  calcium:19,   vitaminA:2,    vitaminC:2,   vitaminD:0,    protein:9,   calories:116, carbs:20,   fat:0.4,  fiber:7.8, category:"Legume",     benefits:["Plant iron","High fiber","Folate-rich"],                 tip:"Add vitamin C food to double iron absorption" },
+  chickpeas:      { label:"🫘 Chickpeas (½ cup)",    iron:2.4,  calcium:40,   vitaminA:3,    vitaminC:1,   vitaminD:0,    protein:7.5, calories:134, carbs:22,   fat:2.1,  fiber:6.2, category:"Legume",     benefits:["Plant protein & iron","Fiber for digestion","Folate"],   tip:"Hummus is a delicious way to eat these!" },
+  kidney_beans:   { label:"🫘 Kidney Beans (½ cup)", iron:2.0,  calcium:25,   vitaminA:1,    vitaminC:1,   vitaminD:0,    protein:7.7, calories:112, carbs:20,   fat:0.5,  fiber:5.7, category:"Legume",     benefits:["Iron & protein","Slow-release energy","Magnesium"],     tip:"Always cook thoroughly — raw beans are toxic" },
+  tofu:           { label:"🧊 Tofu (100g)",          iron:2.7,  calcium:350,  vitaminA:0,    vitaminC:0,   vitaminD:0,    protein:8,   calories:76,  carbs:1.9,  fat:4.2,  fiber:0.3, category:"Protein",    benefits:["Calcium set tofu is high in calcium","Plant protein","Iron"], tip:"Firm tofu has more protein than silken" },
+  nuts:           { label:"🥜 Almonds (¼ cup)",      iron:1.3,  calcium:97,   vitaminA:0,    vitaminC:0,   vitaminD:0,    protein:7,   calories:206, carbs:7.6,  fat:18,   fiber:4,   category:"Nuts & Seeds",benefits:["Calcium & magnesium","Healthy fats","Vitamin E"],        tip:"Soak overnight to reduce phytic acid" },
+  walnuts:        { label:"🥜 Walnuts (¼ cup)",      iron:0.8,  calcium:28,   vitaminA:1,    vitaminC:0.4, vitaminD:0,    protein:4.5, calories:196, carbs:4.1,  fat:19.6, fiber:2,   category:"Nuts & Seeds",benefits:["Omega-3 (ALA)","Brain health","Antioxidants"],          tip:"Best nut source of omega-3 fatty acids" },
+  pumpkin_seeds:  { label:"🌱 Pumpkin Seeds (30g)",  iron:2.5,  calcium:14,   vitaminA:0,    vitaminC:0.5, vitaminD:0,    protein:8.5, calories:163, carbs:4.2,  fat:13.9, fiber:1.7, category:"Nuts & Seeds",benefits:["Highest iron of all seeds","Zinc","Magnesium"],          tip:"Great snack for iron-deficient patients" },
+
+  // ── DAIRY ──
+  milk:           { label:"🥛 Milk (1 cup)",         iron:0.1,  calcium:305,  vitaminA:112,  vitaminC:0,   vitaminD:3.2,  protein:8,   calories:149, carbs:12,   fat:8,    fiber:0,   category:"Dairy",      benefits:["Best calcium source","Vitamin D","Complete protein"],     tip:"Fortified milk has extra vitamin D" },
+  yogurt:         { label:"🍦 Yogurt (1 cup)",        iron:0.2,  calcium:415,  vitaminA:66,   vitaminC:1,   vitaminD:3.0,  protein:12,  calories:149, carbs:17,   fat:3.8,  fiber:0,   category:"Dairy",      benefits:["Highest calcium of dairy","Probiotics","Protein"],        tip:"Greek yogurt has 2× the protein of regular" },
+  cheese:         { label:"🧀 Cheddar Cheese (30g)", iron:0.2,  calcium:204,  vitaminA:75,   vitaminC:0,   vitaminD:0.2,  protein:7,   calories:120, carbs:0.4,  fat:9.9,  fiber:0,   category:"Dairy",      benefits:["Dense calcium source","Protein","B12"],                  tip:"High in saturated fat — use in moderation" },
+  paneer:         { label:"🧀 Paneer (100g)",         iron:0.2,  calcium:480,  vitaminA:48,   vitaminC:0,   vitaminD:0.1,  protein:18,  calories:265, carbs:1.2,  fat:21,   fiber:0,   category:"Dairy",      benefits:["Very high calcium","Protein","Phosphorus"],              tip:"Popular in South Asian diets; great for calcium" },
+
+  // ── VEGETABLES ──
+  spinach:        { label:"🥬 Spinach (1 cup)",       iron:3.6,  calcium:99,   vitaminA:469,  vitaminC:18,  vitaminD:0,    protein:5,   calories:41,  carbs:6.8,  fat:0.5,  fiber:4.3, category:"Vegetable",  benefits:["Top plant iron source","Folate","Vitamin K"],             tip:"Cook with tomatoes — vitamin C boosts iron absorption" },
+  broccoli:       { label:"🥦 Broccoli (1 cup)",      iron:1.0,  calcium:62,   vitaminA:120,  vitaminC:81,  vitaminD:0,    protein:4,   calories:55,  carbs:11,   fat:0.6,  fiber:5.1, category:"Vegetable",  benefits:["High vitamin C","Cancer-fighting compounds","Fiber"],     tip:"Steam lightly to preserve vitamin C" },
+  carrot:         { label:"🥕 Carrots (1 cup)",        iron:0.4,  calcium:41,   vitaminA:1069, vitaminC:7,   vitaminD:0,    protein:1,   calories:52,  carbs:12,   fat:0.3,  fiber:3.6, category:"Vegetable",  benefits:["#1 vitamin A food","Beta-carotene","Eye health"],         tip:"Cook with a little fat to absorb more beta-carotene" },
+  sweetpotato:    { label:"🍠 Sweet Potato (1 med)",  iron:0.7,  calcium:39,   vitaminA:1096, vitaminC:22,  vitaminD:0,    protein:2,   calories:103, carbs:24,   fat:0.1,  fiber:3.8, category:"Vegetable",  benefits:["Very high vitamin A","Complex carbs","Potassium"],        tip:"Eating with the skin adds extra fiber" },
+  kale:           { label:"🥬 Kale (1 cup cooked)",   iron:1.2,  calcium:177,  vitaminA:885,  vitaminC:53,  vitaminD:0,    protein:3.5, calories:49,  carbs:6.3,  fat:0.9,  fiber:4.7, category:"Vegetable",  benefits:["Calcium + vitamin A combo","Vitamin K","Antioxidants"],   tip:"Massage raw kale with oil to reduce bitterness" },
+  tomato:         { label:"🍅 Tomato (1 large)",      iron:0.5,  calcium:18,   vitaminA:76,   vitaminC:23,  vitaminD:0,    protein:1.6, calories:35,  carbs:7,    fat:0.4,  fiber:2.2, category:"Vegetable",  benefits:["Vitamin C boosts iron absorption","Lycopene","Heart health"], tip:"Cooking tomatoes increases lycopene by 5×" },
+  beetroot:       { label:"🫐 Beetroot (½ cup)",      iron:0.7,  calcium:13,   vitaminA:3,    vitaminC:3,   vitaminD:0,    protein:1.7, calories:37,  carbs:8.5,  fat:0.1,  fiber:1.7, category:"Vegetable",  benefits:["Folate for pregnancy","Blood pressure","Nitrates"],       tip:"Important folate source for pregnant women" },
+  bell_pepper:    { label:"🫑 Red Bell Pepper (1)",   iron:0.5,  calcium:8,    vitaminA:234,  vitaminC:152, vitaminD:0,    protein:1,   calories:37,  carbs:7,    fat:0.4,  fiber:2.5, category:"Vegetable",  benefits:["Highest vitamin C of all veg","Vitamin A","Antioxidants"], tip:"Red has 3× more vitamin C than green pepper" },
+  mushrooms:      { label:"🍄 Mushrooms (1 cup)",     iron:0.5,  calcium:3,    vitaminA:0,    vitaminC:2,   vitaminD:7.6,  protein:3.1, calories:44,  carbs:6.5,  fat:0.7,  fiber:3,   category:"Vegetable",  benefits:["Rare plant vitamin D source","Exposed to sun = more D","B vitamins"], tip:"Sun-dried mushrooms have 10× more vitamin D!" },
+
+  // ── FRUITS ──
+  orange:         { label:"🍊 Orange (1 med)",        iron:0.1,  calcium:52,   vitaminA:14,   vitaminC:70,  vitaminD:0,    protein:1,   calories:62,  carbs:15,   fat:0.2,  fiber:3.1, category:"Fruit",      benefits:["High vitamin C","Enhances iron absorption","Folate"],     tip:"Eat alongside iron-rich foods for 2× absorption" },
+  banana:         { label:"🍌 Banana (1 med)",        iron:0.3,  calcium:5,    vitaminA:4,    vitaminC:10,  vitaminD:0,    protein:1,   calories:105, carbs:27,   fat:0.4,  fiber:3.1, category:"Fruit",      benefits:["Potassium","Quick energy","B6 for mood"],                tip:"Riper bananas have more sugar but more antioxidants" },
+  dates:          { label:"🫒 Dates (5 pcs)",          iron:1.0,  calcium:35,   vitaminA:3,    vitaminC:0.4, vitaminD:0,    protein:2,   calories:138, carbs:37,   fat:0.2,  fiber:3.5, category:"Fruit",      benefits:["Iron & folate","Natural energy","Potassium"],            tip:"Traditional food during pregnancy — iron + folate" },
+  strawberries:   { label:"🍓 Strawberries (1 cup)",  iron:0.6,  calcium:27,   vitaminA:2,    vitaminC:98,  vitaminD:0,    protein:1,   calories:49,  carbs:11.7, fat:0.5,  fiber:3,   category:"Fruit",      benefits:["Very high vitamin C","Folate","Antioxidants"],            tip:"Just 8 strawberries meets daily vitamin C!" },
+  mango:          { label:"🥭 Mango (½ cup)",         iron:0.2,  calcium:11,   vitaminA:54,   vitaminC:45,  vitaminD:0,    protein:0.8, calories:99,  carbs:24.7, fat:0.6,  fiber:2.6, category:"Fruit",      benefits:["Vitamin A & C","Folate","Tropical antioxidants"],        tip:"A South Asian staple — vitamin A powerhouse" },
+  pomegranate:    { label:"🍎 Pomegranate (½ cup)",   iron:0.3,  calcium:9,    vitaminA:0,    vitaminC:9,   vitaminD:0,    protein:1.5, calories:83,  carbs:18.7, fat:1.2,  fiber:3.5, category:"Fruit",      benefits:["Powerful antioxidants","Folate","Anti-inflammatory"],     tip:"Seeds (arils) are edible — full of fiber" },
+
+  // ── GRAINS & CARBS ──
+  bread:          { label:"🍞 White Bread (2 sl)",    iron:1.4,  calcium:38,   vitaminA:0,    vitaminC:0,   vitaminD:0,    protein:5,   calories:133, carbs:25,   fat:1.6,  fiber:1.2, category:"Grain",      benefits:["Quick energy","Fortified iron","Easy to eat"],            tip:"Whole wheat bread has 2× the fiber and iron" },
+  wholegrain_bread:{ label:"🍞 Whole Wheat Bread (2sl)",iron:2.1,calcium:48,  vitaminA:0,    vitaminC:0,   vitaminD:0,    protein:6,   calories:138, carbs:23,   fat:2,    fiber:3.8, category:"Grain",      benefits:["More iron than white","High fiber","B vitamins"],         tip:"Better choice for sustained energy and iron" },
+  oats:           { label:"🥣 Oats (½ cup dry)",      iron:2.1,  calcium:26,   vitaminA:0,    vitaminC:0,   vitaminD:0,    protein:5,   calories:154, carbs:28,   fat:3,    fiber:4,   category:"Grain",      benefits:["Iron & fiber","Beta-glucan lowers cholesterol","Slow energy"], tip:"Add vitamin C juice to boost iron absorption" },
+  fortifiedcereal:{ label:"🥣 Fortified Cereal (1 sv)",iron:8.0, calcium:100,  vitaminA:150,  vitaminC:6,   vitaminD:2.5,  protein:4,   calories:110, carbs:24,   fat:1,    fiber:3,   category:"Grain",      benefits:["Iron-fortified","Added vitamins","Easy breakfast"],       tip:"Check labels — fortification varies by brand" },
+  brown_rice:     { label:"🍚 Brown Rice (½ cup cooked)",iron:0.4,calcium:10,  vitaminA:0,    vitaminC:0,   vitaminD:0,    protein:2.5, calories:109, carbs:23,   fat:0.9,  fiber:1.8, category:"Grain",      benefits:["Whole grain","Magnesium","Slow release energy"],          tip:"More nutritious than white rice in all ways" },
+  chapati:        { label:"🫓 Chapati (2 pieces)",     iron:2.4,  calcium:30,   vitaminA:0,    vitaminC:0,   vitaminD:0,    protein:5.5, calories:190, carbs:38,   fat:2.5,  fiber:4.2, category:"Grain",      benefits:["Whole wheat iron","Fiber","Staple energy source"],        tip:"Made with atta flour — whole grain staple" },
+
+  // ── JUNK / EMPTY CALORIES ──
+  chips:          { label:"🥔 Chips (1 pack)",         iron:0.5,  calcium:12,   vitaminA:0,    vitaminC:5,   vitaminD:0,    protein:2,   calories:152, carbs:15,   fat:10,   fiber:1,   category:"Junk Food",  benefits:[],  warning:"High in sodium and trans fats — empty calories", tip:"Almost no nutritional value — use rarely" },
+  soda:           { label:"🥤 Soda (1 can)",            iron:0,    calcium:10,   vitaminA:0,    vitaminC:0,   vitaminD:0,    protein:0,   calories:150, carbs:39,   fat:0,    fiber:0,   category:"Junk Food",  benefits:[],  warning:"39g sugar! Blocks calcium absorption", tip:"Phosphoric acid in cola actively leaches calcium" },
+  candy:          { label:"🍬 Candy Bar (1)",           iron:0.5,  calcium:20,   vitaminA:0,    vitaminC:0,   vitaminD:0,    protein:3,   calories:235, carbs:36,   fat:10,   fiber:1,   category:"Junk Food",  benefits:[],  warning:"High sugar — spikes blood sugar, no micronutrients", tip:"Provides energy but zero essential nutrients" },
+  tea:            { label:"🍵 Tea (1 cup)",              iron:0,    calcium:5,    vitaminA:0,    vitaminC:0,   vitaminD:0,    protein:0,   calories:2,   carbs:0.5,  fat:0,    fiber:0,   category:"Beverage",   benefits:["Antioxidants","Low calorie"],  warning:"Tannins inhibit iron absorption if taken with meals", tip:"Drink tea between meals, not with iron-rich foods" },
+  juice_orange:   { label:"🧃 Orange Juice (1 cup)",   iron:0.5,  calcium:22,   vitaminA:12,   vitaminC:124, vitaminD:2.5,  protein:2,   calories:112, carbs:26,   fat:0.5,  fiber:0.5, category:"Beverage",   benefits:["Very high vitamin C","Iron absorption booster","Fortified D"], tip:"Fortified OJ is great — but whole fruit has more fiber" },
+};
+
+const SCENARIOS = [
+  {
+    id:1, profile:"young_female", name:"Aisha, 20", avatar:"👩‍🎓",
+    tags:["Female","Student","Low energy","Skips meals"],
+    bio:"A university student always on the go. Often skips breakfast and relies on junk food. Lab reports show low serum ferritin (8 µg/L) and pale conjunctiva — signs of iron-deficiency anaemia.",
+    hint:"Iron & Vitamin C are critical! Choose iron-rich foods AND a vitamin C source to double absorption.",
+    clinicalNote:"Low serum ferritin 8 µg/L (normal: 12–150). Haemoglobin 10.5 g/dL. Prescribe dietary iron + vitamin C at same meal.",
+    availableFoods:["eggs","milk","spinach","orange","chicken","bread","chips","soda","lentils","banana","tea","broccoli","fortifiedcereal","dates","pumpkin_seeds","strawberries","tomato","wholegrain_bread","oats"],
+    difficulty:"beginner"
+  },
+  {
+    id:2, profile:"pregnant", name:"Sara, 28", avatar:"🤰",
+    tags:["Pregnant","2nd trimester","Fatigue","Low Hb","High risk"],
+    bio:"Second trimester. Complains of tiredness and breathlessness. Haemoglobin is 9.8 g/dL — significantly below the 11 g/dL threshold. Also has mild leg cramps (low calcium).",
+    hint:"Iron needs jump to 27mg/day! Also ensure calcium and protein for fetal bone development.",
+    clinicalNote:"Hb 9.8 g/dL — iron deficiency anaemia in pregnancy. Leg cramps suggest low calcium/magnesium. Neural tube protection needs folate (dates, lentils, beetroot).",
+    availableFoods:["spinach","dates","beef","milk","eggs","lentils","broccoli","yogurt","chicken","nuts","orange","chips","soda","tea","beetroot","paneer","sardines","mango","oats","beetroot","chickpeas","fortifiedcereal","juice_orange"],
+    difficulty:"intermediate"
+  },
+  {
+    id:3, profile:"child", name:"Hamza, 10", avatar:"🧒",
+    tags:["Child","Active","Poor growth","Dental","Low appetite"],
+    bio:"Active boy with height below the 5th percentile for age. Parents report he refuses vegetables and drinks a lot of soda. Dental checkup showed early decay. Bone density scan shows concern.",
+    hint:"Calcium & Vitamin D are vital for growing bones! Avoid soda — it leaches calcium from bones.",
+    clinicalNote:"Height-for-age z-score: −2.2 (stunted). High soda intake → phosphoric acid depletes calcium. Needs 1300mg calcium daily. Vitamin D deficiency likely due to indoor lifestyle.",
+    availableFoods:["milk","yogurt","eggs","salmon","carrot","banana","sweetpotato","fortifiedcereal","nuts","bread","chips","soda","chicken","cheese","mushrooms","sardines","juice_orange","oats","mango","strawberries","broccoli"],
+    difficulty:"beginner"
+  },
+  {
+    id:4, profile:"elderly_female", name:"Mrs. Noor, 68", avatar:"👵",
+    tags:["Elderly","Osteoporosis","Low sun","Low activity","Post-menopausal"],
+    bio:"Retired teacher, rarely goes outdoors due to mobility issues. DEXA scan shows T-score of −2.7 (osteoporosis). Doctor flagged critically low vitamin D (8 nmol/L). Low appetite and chewing difficulties.",
+    hint:"Vitamin D + Calcium together! Soft foods are easier. Vitamin D from salmon & fortified foods.",
+    clinicalNote:"T-score −2.7 = osteoporosis. Serum 25-OH vitamin D: 8 nmol/L (deficient; normal >50). Calcium needs: 1200mg/day. Soft, easy-to-chew foods preferred. Avoid tea with meals.",
+    availableFoods:["salmon","milk","yogurt","eggs","fortifiedcereal","nuts","spinach","broccoli","carrot","sweetpotato","bread","tea","chips","sardines","mushrooms","cheese","paneer","oats","juice_orange","kale","tofu"],
+    difficulty:"intermediate"
+  },
+  {
+    id:5, profile:"athlete_male", name:"Usman, 24", avatar:"🏋️",
+    tags:["Athlete","Weight training","High energy","Competitive","5×/week"],
+    bio:"Training 5 days a week for a national powerlifting competition. Wants to maximise muscle protein synthesis. Blood test shows mildly low iron — common in high-intensity athletes due to hepcidin response.",
+    hint:"Protein target is 75g/day! Also watch iron — athletes lose it through sweat and foot-strike haemolysis.",
+    clinicalNote:"Serum ferritin 11 µg/L (borderline low). Exercise-induced hepcidin suppresses iron absorption post-workout. High protein demand: 1.6–2.2g/kg body weight. Needs complex carbs for glycogen.",
+    availableFoods:["chicken","beef","eggs","salmon","lentils","nuts","milk","yogurt","banana","sweetpotato","broccoli","orange","fortifiedcereal","chips","soda","tuna","chickpeas","oats","brown_rice","walnuts","pumpkin_seeds","bell_pepper","chapati","spinach"],
+    difficulty:"advanced"
+  },
+];
+
+const SEED_SCORES = [
+  { name:"Zara K.",   avatar:"🌸", scores:[88,72,91,65,80], date:"2025-04-20" },
+  { name:"Ali M.",    avatar:"🌿", scores:[76,85,70,90,62], date:"2025-04-21" },
+  { name:"Hina R.",   avatar:"🍓", scores:[95,88,79,84,91], date:"2025-04-19" },
+  { name:"Omar T.",   avatar:"🍋", scores:[60,55,72,68,74], date:"2025-04-18" },
+  { name:"Fatima B.", avatar:"🫐", scores:[82,90,88,77,85], date:"2025-04-22" },
+];
+
+const AVATARS = ["🌻","🍓","🌿","🫐","🌸","🍋","🦋","🌺","🍀","🎯"];
+
+async function getAIFeedback(scenario, selectedFoods, nutrients, targets) {
+  const foodNames = selectedFoods.map(f => FOODS[f]?.label || f).join(", ");
+  const deficits = Object.entries(nutrients).filter(([k,v])=>v<targets[k]*0.8).map(([k])=>RDA_META[k].label);
+  const adequate = Object.entries(nutrients).filter(([k,v])=>v>=targets[k]*0.8).map(([k])=>RDA_META[k].label);
+  const junkFoods = selectedFoods.filter(f=>FOODS[f]?.category==="Junk Food").map(f=>FOODS[f].label);
+  const prompt = `You are a warm, encouraging AI nutrition assistant in a health education game.
+Patient: ${scenario.name} | ${scenario.tags.join(", ")}
+Clinical note: ${scenario.clinicalNote}
+Chosen diet: ${foodNames||"nothing"}.
+${junkFoods.length>0?`Junk/harmful foods selected: ${junkFoods.join(", ")}.`:""}
+Deficient nutrients (below 80% RDA): ${deficits.join(", ")||"none"}.
+Adequate nutrients: ${adequate.join(", ")||"none"}.
+
+Give SHORT (3-4 sentences) warm educational feedback specific to this patient's clinical condition. 
+Mention 1-2 specific deficiencies relevant to their diagnosis. Suggest 1-2 specific foods to add or swap.
+${junkFoods.length>0?"Also briefly note why the junk food(s) are harmful for this specific patient.":""}
+Be encouraging and educational. Concise and actionable.`;
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:250, messages:[{role:"user",content:prompt}] }),
+    });
+    const data = await response.json();
+    return data.content?.[0]?.text || "Great effort! Review the nutrient bars to improve.";
+  } catch { return "Great effort! Keep refining the diet based on the RDA meters."; }
+}
+
+// ── COMPONENTS ──────────────────────────────────────────────────────────────
+
+function NutrientBar({ id, value, target }) {
+  const meta = RDA_META[id];
+  const pct = Math.min((value/target)*100, 100);
+  const barColor = pct>=85 ? meta.color : pct>=50 ? P.lemon : P.rose;
+  const icon = pct>=85 ? "✅" : pct>=50 ? "⚡" : "❌";
+  return (
+    <div style={{marginBottom:10}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+        <span style={{fontSize:12,color:P.text,fontWeight:700,display:"flex",gap:5,alignItems:"center"}}>
+          <span>{meta.emoji}</span>{meta.label}
+        </span>
+        <span style={{fontSize:11,color:P.muted}}>{icon} {Math.round(value)}/{target} {meta.unit}</span>
+      </div>
+      <div style={{background:P.border,borderRadius:20,height:12,overflow:"hidden"}}>
+        <div style={{width:`${pct}%`,height:"100%",borderRadius:20,background:`linear-gradient(90deg,${barColor}99,${barColor})`,transition:"width 0.7s cubic-bezier(.4,0,.2,1)",boxShadow:pct>=85?`0 0 10px ${meta.color}`:"none"}}/>
+      </div>
+    </div>
+  );
+}
+
+function MacroBar({ label, value, color, unit }) {
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+      <span style={{fontSize:11,color:P.muted,width:60,fontWeight:700}}>{label}</span>
+      <div style={{flex:1,background:P.border,borderRadius:10,height:8}}>
+        <div style={{width:`${Math.min(value/3,100)}%`,height:"100%",borderRadius:10,background:color,transition:"width 0.5s"}}/>
+      </div>
+      <span style={{fontSize:11,color:P.text,fontWeight:800,width:45,textAlign:"right"}}>{Math.round(value)}{unit}</span>
+    </div>
+  );
+}
+
+function FoodDetailPanel({ foodKey, onClose }) {
+  const food = FOODS[foodKey];
+  if(!food) return null;
+  const categoryColors = {
+    "Protein":"#ddd4f7","Dairy":"#bde4f7","Vegetable":"#c8e6c9","Fruit":"#fef3a0",
+    "Grain":"#ffd8b8","Legume":"#f0e6dc","Nuts & Seeds":"#ffb3b3","Junk Food":"#fbc8d4","Beverage":"#b8f0e0"
+  };
+  const bg = categoryColors[food.category] || P.surface;
+  return (
+    <div className="tooltip-panel" style={{
+      position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",
+      zIndex:100,maxWidth:340,width:"90%",
+      background:P.card,borderRadius:20,padding:20,
+      border:`2px solid ${P.coral}`,boxShadow:"0 12px 48px #4a3f3840"
+    }}>
+      <button onClick={onClose} style={{position:"absolute",top:12,right:14,background:"none",border:"none",fontSize:20,cursor:"pointer",color:P.muted}}>×</button>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+        <div style={{fontSize:32}}>{food.label.split(" ")[0]}</div>
+        <div>
+          <div style={{fontWeight:900,color:P.text,fontSize:15}}>{food.label.slice(food.label.indexOf(" ")+1)}</div>
+          <span style={{fontSize:11,background:bg,color:P.deep,borderRadius:20,padding:"2px 8px",fontWeight:700}}>{food.category}</span>
+        </div>
+      </div>
+
+      {food.warning && (
+        <div style={{background:`${P.rose}44`,border:`1.5px solid ${P.rose}`,borderRadius:12,padding:"8px 12px",marginBottom:12,fontSize:12,color:"#c0392b",fontWeight:700}}>
+          ⚠️ {food.warning}
+        </div>
+      )}
+
+      <div style={{marginBottom:12}}>
+        <div style={{fontSize:11,color:P.muted,fontWeight:800,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Macros per serving</div>
+        <MacroBar label="Calories" value={food.calories} color={P.coral} unit=" kcal"/>
+        <MacroBar label="Protein"  value={food.protein*3}  color="#ddd4f7" unit="g"/>
+        <MacroBar label="Carbs"    value={food.carbs}    color={P.lemon}  unit="g"/>
+        <MacroBar label="Fat"      value={food.fat*4}     color={P.peach}  unit="g"/>
+        <MacroBar label="Fiber"    value={food.fiber*5}   color={P.sage}   unit="g"/>
+      </div>
+
+      <div style={{marginBottom:12}}>
+        <div style={{fontSize:11,color:P.muted,fontWeight:800,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Key Micronutrients</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
+          {Object.entries(RDA_META).filter(([k])=>food[k]>0).map(([k,meta])=>(
+            <div key={k} style={{background:`${meta.color}55`,borderRadius:8,padding:"4px 8px",fontSize:11}}>
+              {meta.emoji} <strong>{food[k]}{meta.unit}</strong> {meta.label}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {food.benefits && food.benefits.length>0 && (
+        <div style={{marginBottom:10}}>
+          <div style={{fontSize:11,color:P.muted,fontWeight:800,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Benefits</div>
+          {food.benefits.map((b,i)=>(
+            <div key={i} style={{fontSize:12,color:P.deep,marginBottom:3}}>✓ {b}</div>
+          ))}
+        </div>
+      )}
+
+      {food.tip && (
+        <div style={{background:`${P.mint}44`,borderRadius:10,padding:"8px 12px",fontSize:12,color:P.deep,fontStyle:"italic"}}>
+          💡 {food.tip}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ScoreRing({ score, size=72 }) {
+  const grade = score>=90?["S","#a8edca","#2ecc71"]:score>=75?["A","#bde4f7","#3498db"]:score>=55?["B","#ddd4f7","#9b59b6"]:score>=35?["C","#fef3a0","#f39c12"]:["D","#fbc8d4","#e74c3c"];
+  const r=28, circ=2*Math.PI*r, dash=circ*(score/100);
+  const fs = size>60?16:size>40?12:9;
+  const fsSub = size>60?10:size>40?8:7;
+  return (
+    <div style={{position:"relative",width:size,height:size,flexShrink:0}}>
+      <svg width={size} height={size} style={{transform:"rotate(-90deg)"}}>
+        <circle cx={size/2} cy={size/2} r={r*(size/72)} fill="none" stroke={P.border} strokeWidth={5}/>
+        <circle cx={size/2} cy={size/2} r={r*(size/72)} fill="none" stroke={grade[1]} strokeWidth={5}
+          strokeDasharray={`${dash*(size/72)} ${circ*(size/72)}`} strokeLinecap="round"
+          style={{transition:"stroke-dasharray 0.8s ease",filter:`drop-shadow(0 0 5px ${grade[1]})`}}/>
+      </svg>
+      <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+        <span style={{fontWeight:900,fontSize:fs,color:grade[2],lineHeight:1}}>{grade[0]}</span>
+        <span style={{fontSize:fsSub,color:P.muted}}>{score}%</span>
+      </div>
+    </div>
+  );
+}
+
+function Sparkline({ scores, color="#b8f0e0" }) {
+  if(!scores||scores.length<2) return null;
+  const h=24,w=80;
+  const pts = scores.map((s,i)=>`${(i/(scores.length-1))*w},${h-(s/100)*h}`).join(" ");
+  return (
+    <svg width={w} height={h} style={{overflow:"visible"}}>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"/>
+      {scores.map((s,i)=><circle key={i} cx={(i/(scores.length-1))*w} cy={h-(s/100)*h} r={3} fill={color}/>)}
+    </svg>
+  );
+}
+
+function BlobBg() {
+  const blobs=[
+    {c:"#fbc8d430",x:"8%",y:"3%",s:300},{c:"#bde4f730",x:"72%",y:"8%",s:260},
+    {c:"#b8f0e030",x:"38%",y:"58%",s:340},{c:"#ddd4f730",x:"78%",y:"68%",s:220},
+    {c:"#fef3a030",x:"4%",y:"68%",s:180},{c:"#ffd8b830",x:"58%",y:"28%",s:200},
+  ];
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:0,overflow:"hidden",pointerEvents:"none"}}>
+      {blobs.map((b,i)=>(
+        <div key={i} style={{position:"absolute",left:b.x,top:b.y,width:b.s,height:b.s,borderRadius:"50%",background:b.c,filter:"blur(55px)",animation:`blob${i%3} ${6+i*1.5}s ease-in-out infinite alternate`}}/>
+      ))}
+    </div>
+  );
+}
+
+const cardStyle = {
+  background:P.card,borderRadius:20,padding:18,
+  border:`1.5px solid ${P.border}`,
+  boxShadow:"0 4px 24px #d0b8a810",
+};
+
+const btn = (extra={}) => ({
+  borderRadius:50,border:"none",fontWeight:800,cursor:"pointer",
+  fontFamily:"Nunito,sans-serif",transition:"all 0.2s",...extra
+});
+
+// ── MAIN GAME COMPONENT ──────────────────────────────────────────────────────
+function NutritionGame() {
+  const [screen,setScreen]             = useState("menu");
+  const [playerName,setPlayerName]     = useState("");
+  const [playerAvatar,setPlayerAvatar] = useState("🌻");
+  const [mode,setMode]                 = useState("beginner");
+  const [scenarioIdx,setScenarioIdx]   = useState(0);
+  const [selected,setSelected]         = useState([]);
+  const [aiFeedback,setAIFeedback]     = useState("");
+  const [aiLoading,setAILoading]       = useState(false);
+  const [submitted,setSubmitted]       = useState(false);
+  const [roundScore,setRoundScore]     = useState(0);
+  const [roundScores,setRoundScores]   = useState([]);
+  const [showHint,setShowHint]         = useState(false);
+  const [timeLeft,setTimeLeft]         = useState(null);
+  const [leaderboard,setLeaderboard]   = useState(SEED_SCORES);
+  const [playerHistory,setPlayerHistory] = useState([]);
+  const [tab,setTab]                   = useState("nutrients");
+  const [animIn,setAnimIn]             = useState(false);
+  const [detailFood,setDetailFood]     = useState(null);
+  const [filterCategory,setFilterCategory] = useState("All");
+  const timerRef = useRef(null);
+
+  const scenario = SCENARIOS[scenarioIdx];
+  const targets  = RDA_TARGETS[scenario.profile];
+
+  const nutrients = Object.keys(RDA_META).reduce((acc,k)=>{
+    acc[k] = selected.reduce((s,f)=>s+(FOODS[f]?.[k]||0),0); return acc;
+  },{});
+
+  const macros = selected.reduce((acc,f)=>{
+    const fd = FOODS[f]||{};
+    acc.calories += fd.calories||0;
+    acc.protein  += fd.protein||0;
+    acc.carbs    += fd.carbs||0;
+    acc.fat      += fd.fat||0;
+    acc.fiber    += fd.fiber||0;
+    return acc;
+  },{calories:0,protein:0,carbs:0,fat:0,fiber:0});
+
+  const computeScore = (nutr,tgts) => {
+    const vals = Object.keys(tgts).map(k=>Math.min((nutr[k]/tgts[k])*100,100));
+    return Math.round(vals.reduce((a,b)=>a+b,0)/vals.length);
+  };
+
+  const avgScore = (e) => e.scores.length ? Math.round(e.scores.reduce((a,b)=>a+b,0)/e.scores.length) : 0;
+
+  useEffect(()=>{setAnimIn(false);setTimeout(()=>setAnimIn(true),60);},[screen,scenarioIdx]);
+
+  useEffect(()=>{
+    if(mode==="timeattack"&&screen==="game"&&!submitted){
+      setTimeLeft(60);
+      timerRef.current=setInterval(()=>{
+        setTimeLeft(t=>{
+          if(t<=1){clearInterval(timerRef.current);handleSubmit(true);return 0;}
+          return t-1;
+        });
+      },1000);
+    }
+    return()=>clearInterval(timerRef.current);
+  },[screen,scenarioIdx]);
+
+  const toggleFood = (food) => {
+    if(submitted)return;
+    setSelected(prev=>prev.includes(food)?prev.filter(f=>f!==food):prev.length<6?[...prev,food]:prev);
+  };
+
+  const handleSubmit = async () => {
+    clearInterval(timerRef.current);
+    const sc=computeScore(nutrients,targets);
+    setRoundScore(sc); setRoundScores(prev=>[...prev,sc]);
+    setSubmitted(true); setAILoading(true);
+    const fb = await getAIFeedback(scenario,selected,nutrients,targets);
+    setAIFeedback(fb); setAILoading(false);
+  };
+
+  const nextScenario = () => {
+    if(scenarioIdx<SCENARIOS.length-1){
+      setScenarioIdx(i=>i+1); setSelected([]); setSubmitted(false);
+      setAIFeedback(""); setShowHint(false); setTab("nutrients"); setFilterCategory("All");
+    } else {
+      const allScores=[...roundScores];
+      const entry={name:playerName||"You",avatar:playerAvatar,scores:allScores,date:new Date().toISOString().slice(0,10)};
+      setLeaderboard(prev=>[...prev,entry].sort((a,b)=>avgScore(b)-avgScore(a)));
+      setPlayerHistory(prev=>[entry,...prev]);
+      setScreen("results");
+    }
+  };
+
+  const restart = () => {
+    setScreen("menu");setScenarioIdx(0);setSelected([]);setSubmitted(false);
+    setAIFeedback("");setRoundScore(0);setRoundScores([]);setShowHint(false);setTimeLeft(null);setTab("nutrients");setFilterCategory("All");
+  };
+
+  const fadeIn = { opacity:animIn?1:0, transform:animIn?"translateY(0)":"translateY(20px)", transition:"all 0.45s ease" };
+
+  // ── MENU ────────────────────────────────────────────────────────────────────
+  if(screen==="menu") return (
+    <div style={{minHeight:"100vh",background:P.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,position:"relative"}}>
+      <BlobBg/>
+      <div style={{position:"relative",zIndex:1,maxWidth:500,width:"100%",...fadeIn}}>
+        <div style={{textAlign:"center",marginBottom:28}}>
+          <div style={{fontSize:68,filter:"drop-shadow(0 6px 16px #fbc8d466)"}}>🥗</div>
+          <h1 style={{fontWeight:900,fontSize:40,color:P.text,margin:"8px 0 4px",lineHeight:1.1}}>
+            RDA <span style={{background:`linear-gradient(135deg,${P.coral},${P.sky})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>AI</span> Nutrition
+          </h1>
+          <p style={{color:P.muted,fontSize:14,letterSpacing:2,margin:0}}>PLANNER GAME · ENHANCED EDITION</p>
+        </div>
+
+        <div style={{...cardStyle,marginBottom:14}}>
+          <p style={{color:P.muted,fontSize:11,fontWeight:800,letterSpacing:1.5,textTransform:"uppercase",margin:"0 0 12px"}}>Select Mode</p>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {[
+              {id:"beginner",label:"🌱 Beginner",sub:"Hints + food tips",grad:`${P.mint},${P.sage}`},
+              {id:"challenge",label:"🤖 AI Challenge",sub:"No hints",grad:`${P.sky},${P.lavender}`},
+              {id:"timeattack",label:"⏳ Time Attack",sub:"60 sec/round",grad:`${P.rose},${P.peach}`},
+            ].map(m=>(
+              <button key={m.id} className="hov" onClick={()=>setMode(m.id)} style={{
+                flex:"1 0 130px",padding:"12px 14px",borderRadius:16,
+                border:`2px solid ${mode===m.id?"transparent":P.border}`,
+                background:mode===m.id?`linear-gradient(135deg,${m.grad})`:P.surface,
+                color:mode===m.id?P.deep:P.muted,cursor:"pointer",textAlign:"left",
+              }}>
+                <div style={{fontWeight:800,fontSize:14}}>{m.label}</div>
+                <div style={{fontSize:11,marginTop:2,opacity:0.75}}>{m.sub}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <button className="hov" onClick={()=>setScreen("name")} style={btn({background:`linear-gradient(135deg,${P.mint},${P.sky})`,color:P.deep,fontSize:17,padding:"15px 0",width:"100%",marginBottom:12,boxShadow:`0 4px 18px ${P.mint}88`})}>
+          🚀 Start Game
+        </button>
+        <div style={{display:"flex",gap:10}}>
+          <button className="hov" onClick={()=>setScreen("leaderboard")} style={btn({flex:1,background:`linear-gradient(135deg,${P.lemon},${P.peach})`,color:P.deep,fontSize:13,padding:"11px"})}>🏆 Leaderboard</button>
+          <button className="hov" onClick={()=>setScreen("history")} style={btn({flex:1,background:`linear-gradient(135deg,${P.lavender},${P.blush})`,color:P.deep,fontSize:13,padding:"11px"})}>📋 My History</button>
+        </div>
+        <p style={{textAlign:"center",color:P.border,fontSize:12,marginTop:14}}>{SCENARIOS.length} clinical cases · {Object.keys(FOODS).length} foods · AI feedback</p>
+      </div>
+    </div>
+  );
+
+  // ── NAME ENTRY ──────────────────────────────────────────────────────────────
+  if(screen==="name") return (
+    <div style={{minHeight:"100vh",background:P.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:24,position:"relative"}}>
+      <BlobBg/>
+      <div style={{position:"relative",zIndex:1,maxWidth:440,width:"100%",...fadeIn}}>
+        <div style={cardStyle}>
+          <div style={{fontSize:40,marginBottom:8}}>👋</div>
+          <h2 style={{fontWeight:900,color:P.text,fontSize:26,margin:"0 0 6px"}}>Who's playing?</h2>
+          <p style={{color:P.muted,fontSize:13,marginBottom:20}}>Enter your name and pick an avatar to get started!</p>
+          <input value={playerName} onChange={e=>setPlayerName(e.target.value)} placeholder="Your name..."
+            style={{width:"100%",padding:"12px 16px",borderRadius:14,border:`1.5px solid ${P.border}`,background:P.surface,fontSize:15,color:P.text,marginBottom:16,display:"block"}}/>
+          <p style={{color:P.muted,fontSize:12,marginBottom:10,fontWeight:800}}>Pick your avatar</p>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:24}}>
+            {AVATARS.map(a=>(
+              <button key={a} onClick={()=>setPlayerAvatar(a)} style={{width:44,height:44,borderRadius:12,border:`2px solid ${playerAvatar===a?P.coral:P.border}`,background:playerAvatar===a?`${P.peach}66`:P.surface,fontSize:22,cursor:"pointer",transition:"all 0.15s"}}>
+                {a}
+              </button>
+            ))}
+          </div>
+          <button className="hov" onClick={()=>setScreen("game")} style={btn({background:`linear-gradient(135deg,${P.mint},${P.sky})`,color:P.deep,fontSize:16,padding:"14px",width:"100%",boxShadow:`0 4px 16px ${P.mint}88`})}>
+            Start Game →
+          </button>
+          <button onClick={()=>setScreen("menu")} style={{background:"none",border:"none",color:P.muted,cursor:"pointer",width:"100%",marginTop:12,fontSize:13}}>← Back</button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── LEADERBOARD ─────────────────────────────────────────────────────────────
+  if(screen==="leaderboard") {
+    const sorted=[...leaderboard].sort((a,b)=>avgScore(b)-avgScore(a));
+    const medalColors=["#f7dc6f","#bdc3c7","#e59866"];
+    return (
+      <div style={{minHeight:"100vh",background:P.bg,padding:"24px 16px",position:"relative"}}>
+        <BlobBg/>
+        <div style={{position:"relative",zIndex:1,maxWidth:580,margin:"0 auto",...fadeIn}}>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+            <button onClick={()=>setScreen("menu")} style={btn({background:P.surface,border:`1.5px solid ${P.border}`,color:P.muted,fontSize:13,padding:"8px 16px",borderRadius:12})}>← Back</button>
+            <h1 style={{fontWeight:900,color:P.text,fontSize:28,margin:0}}>🏆 Leaderboard</h1>
+          </div>
+          {sorted.map((entry,i)=>{
+            const avg=avgScore(entry);
+            const isYou=entry.name===(playerName||"You");
+            return (
+              <div key={i} style={{...cardStyle,marginBottom:10,display:"flex",alignItems:"center",gap:14,
+                background:i===0?`${P.lemon}88`:i===1?"#f8f8f8":i===2?`${P.peach}55`:P.card,
+                border:isYou?`2px solid ${P.mint}`:cardStyle.border}}>
+                <div style={{width:36,height:36,borderRadius:"50%",background:medalColors[i]||P.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:i<3?20:14,fontWeight:900,color:P.deep,flexShrink:0}}>
+                  {i<3?["🥇","🥈","🥉"][i]:i+1}
+                </div>
+                <span style={{fontSize:30,flexShrink:0}}>{entry.avatar}</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontWeight:800,color:P.text,fontSize:15,display:"flex",alignItems:"center",gap:6}}>
+                    {entry.name}
+                    {isYou&&<span style={{fontSize:10,background:P.mint,color:P.deep,borderRadius:20,padding:"2px 8px",fontWeight:700}}>YOU</span>}
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginTop:5,flexWrap:"wrap"}}>
+                    <Sparkline scores={entry.scores} color={i===0?"#f39c12":i===1?"#95a5a6":P.coral}/>
+                    <span style={{fontSize:11,color:P.muted}}>{entry.date}</span>
+                  </div>
+                </div>
+                <ScoreRing score={avg} size={58}/>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // ── HISTORY ─────────────────────────────────────────────────────────────────
+  if(screen==="history") return (
+    <div style={{minHeight:"100vh",background:P.bg,padding:"24px 16px",position:"relative"}}>
+      <BlobBg/>
+      <div style={{position:"relative",zIndex:1,maxWidth:580,margin:"0 auto",...fadeIn}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+          <button onClick={()=>setScreen("menu")} style={btn({background:P.surface,border:`1.5px solid ${P.border}`,color:P.muted,fontSize:13,padding:"8px 16px",borderRadius:12})}>← Back</button>
+          <h1 style={{fontWeight:900,color:P.text,fontSize:28,margin:0}}>📋 My History</h1>
+        </div>
+        {playerHistory.length===0?(
+          <div style={{...cardStyle,textAlign:"center",padding:52}}>
+            <div style={{fontSize:52,marginBottom:12}}>🌱</div>
+            <p style={{color:P.muted,fontSize:15}}>No games played yet!</p>
+            <button className="hov" onClick={()=>setScreen("menu")} style={btn({background:`linear-gradient(135deg,${P.mint},${P.sky})`,color:P.deep,fontSize:14,padding:"12px 28px",marginTop:16})}>Play Now</button>
+          </div>
+        ):playerHistory.map((entry,i)=>{
+          const avg=avgScore(entry);
+          return (
+            <div key={i} style={{...cardStyle,marginBottom:16}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+                <div>
+                  <div style={{fontWeight:900,color:P.text,fontSize:18}}>{entry.avatar} {entry.name}</div>
+                  <div style={{fontSize:12,color:P.muted,marginTop:2}}>{entry.date} · {entry.scores.length} scenarios</div>
+                  <div style={{marginTop:8}}><Sparkline scores={entry.scores} color={P.coral}/></div>
+                </div>
+                <ScoreRing score={avg} size={72}/>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))",gap:8}}>
+                {SCENARIOS.map((sc,j)=>{
+                  const sc_score=entry.scores[j];
+                  const color=sc_score>=75?P.mint:sc_score>=50?P.lemon:P.rose;
+                  return (
+                    <div key={j} style={{background:sc_score!=null?`${color}55`:P.surface,borderRadius:12,padding:"10px 12px",border:`1.5px solid ${sc_score!=null?color:P.border}`}}>
+                      <div style={{fontSize:20,marginBottom:3}}>{sc.avatar}</div>
+                      <div style={{fontSize:11,fontWeight:800,color:P.text}}>{sc.name}</div>
+                      <div style={{fontSize:12,color:P.muted,marginTop:3}}>
+                        {sc_score!=null?<strong style={{color:sc_score>=75?"#27ae60":sc_score>=50?"#f39c12":"#e74c3c"}}>{sc_score}%</strong>:<span>—</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  // ── RESULTS ─────────────────────────────────────────────────────────────────
+  if(screen==="results") {
+    const avg=Math.round(roundScores.reduce((a,b)=>a+b,0)/roundScores.length);
+    const grade=avg>=90?"Nutrition Master 🏆":avg>=75?"Health Expert 🥇":avg>=55?"Good Dietitian 🥈":avg>=35?"Keep Learning 📚":"Try Again 💪";
+    return (
+      <div style={{minHeight:"100vh",background:P.bg,padding:"24px 16px",position:"relative"}}>
+        <BlobBg/>
+        <div style={{position:"relative",zIndex:1,maxWidth:520,margin:"0 auto",...fadeIn}}>
+          <div style={{...cardStyle,textAlign:"center",marginBottom:14,background:`linear-gradient(145deg,${P.mint}33,${P.sky}33)`}}>
+            <div style={{fontSize:68,marginBottom:6}}>🎉</div>
+            <h1 style={{fontWeight:900,color:P.text,fontSize:34,margin:0}}>Game Complete!</h1>
+            <p style={{color:P.coral,fontSize:20,fontWeight:800,margin:"8px 0 0"}}>{grade}</p>
+            <div style={{display:"flex",justifyContent:"center",margin:"20px 0"}}><ScoreRing score={avg} size={110}/></div>
+            <p style={{color:P.muted,fontSize:13}}>Average across {SCENARIOS.length} clinical cases</p>
+          </div>
+          <div style={{...cardStyle,marginBottom:14}}>
+            <h3 style={{fontWeight:900,color:P.text,margin:"0 0 14px",fontSize:16}}>📊 Round Breakdown</h3>
+            {SCENARIOS.map((sc,i)=>{
+              const s=roundScores[i]||0;
+              const bg=s>=75?P.mint:s>=50?P.lemon:P.rose;
+              return (
+                <div key={i} style={{display:"flex",alignItems:"center",gap:12,marginBottom:10,padding:"10px 14px",borderRadius:14,background:`${bg}33`,border:`1.5px solid ${bg}`}}>
+                  <span style={{fontSize:26}}>{sc.avatar}</span>
+                  <div style={{flex:1}}>
+                    <div style={{fontWeight:800,color:P.text,fontSize:14}}>{sc.name}</div>
+                    <div style={{background:P.border,borderRadius:20,height:8,marginTop:5}}>
+                      <div style={{width:`${s}%`,height:"100%",borderRadius:20,background:`linear-gradient(90deg,${bg}99,${bg})`,transition:"width 1.2s ease"}}/>
+                    </div>
+                  </div>
+                  <ScoreRing score={s} size={44}/>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+            <button className="hov" onClick={()=>setScreen("leaderboard")} style={btn({flex:1,background:`linear-gradient(135deg,${P.lemon},${P.peach})`,color:P.deep,fontSize:14,padding:"13px"})}>🏆 Leaderboard</button>
+            <button className="hov" onClick={()=>setScreen("history")} style={btn({flex:1,background:`linear-gradient(135deg,${P.lavender},${P.blush})`,color:P.deep,fontSize:14,padding:"13px"})}>📋 My History</button>
+            <button className="hov" onClick={restart} style={btn({width:"100%",background:`linear-gradient(135deg,${P.peach},${P.coral})`,color:"white",fontSize:15,padding:"14px",marginTop:2})}>🔄 Play Again</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── GAME ────────────────────────────────────────────────────────────────────
+  const categories = ["All", ...new Set(scenario.availableFoods.map(f=>FOODS[f]?.category||"Other"))];
+  const filteredFoods = scenario.availableFoods.filter(f=>filterCategory==="All"||(FOODS[f]?.category===filterCategory));
+
+  return (
+    <div style={{minHeight:"100vh",background:P.bg,paddingBottom:40,position:"relative"}}>
+      <BlobBg/>
+
+      {/* Detail panel overlay */}
+      {detailFood && (
+        <>
+          <div onClick={()=>setDetailFood(null)} style={{position:"fixed",inset:0,zIndex:99,background:"#00000030",backdropFilter:"blur(2px)"}}/>
+          <FoodDetailPanel foodKey={detailFood} onClose={()=>setDetailFood(null)}/>
+        </>
+      )}
+
+      {/* Sticky top bar */}
+      <div style={{background:P.card,borderBottom:`1.5px solid ${P.border}`,padding:"10px 18px",display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:20,backdropFilter:"blur(8px)"}}>
+        <button onClick={restart} style={btn({background:P.surface,border:`1.5px solid ${P.border}`,color:P.muted,fontSize:12,padding:"6px 14px",borderRadius:10})}>← Menu</button>
+        <div style={{flex:1}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:P.muted,marginBottom:4}}>
+            <span style={{fontWeight:700}}>{playerAvatar} {playerName||"Player"} · Patient {scenarioIdx+1}/{SCENARIOS.length}</span>
+            <span style={{color:mode==="timeattack"&&timeLeft<=10?"#e74c3c":P.muted,fontWeight:700}}>
+              {mode==="timeattack"?`⏳ ${timeLeft}s`:mode==="beginner"?"🌱 Beginner":"🤖 Challenge"}
+            </span>
+          </div>
+          <div style={{background:P.border,borderRadius:20,height:7}}>
+            <div style={{width:`${(scenarioIdx/SCENARIOS.length)*100}%`,height:"100%",background:`linear-gradient(90deg,${P.mint},${P.sky})`,borderRadius:20,transition:"width 0.5s"}}/>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:5,alignItems:"center"}}>
+          {roundScores.map((s,i)=><ScoreRing key={i} score={s} size={34}/>)}
+        </div>
+      </div>
+
+      <div style={{maxWidth:960,margin:"0 auto",padding:"18px 16px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,position:"relative",zIndex:1,...fadeIn}}>
+
+        {/* LEFT: Profile + Food */}
+        <div>
+          {/* Patient Card */}
+          <div style={{...cardStyle,marginBottom:12}}>
+            <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+              <div style={{fontSize:46,background:`linear-gradient(135deg,${P.peach},${P.rose})`,borderRadius:18,padding:"8px 12px",lineHeight:1,flexShrink:0}}>{scenario.avatar}</div>
+              <div style={{flex:1}}>
+                <h2 style={{margin:0,fontWeight:900,color:P.text,fontSize:20}}>{scenario.name}</h2>
+                <div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:5}}>
+                  {scenario.tags.map(t=><span key={t} style={{fontSize:10,background:P.lemon,color:P.deep,borderRadius:20,padding:"3px 9px",fontWeight:700}}>{t}</span>)}
+                </div>
+                <p style={{color:P.muted,fontSize:12,margin:"7px 0 0",lineHeight:1.65}}>{scenario.bio}</p>
+              </div>
+            </div>
+            {/* Clinical Note */}
+            <div style={{marginTop:10,background:`${P.sky}44`,borderRadius:12,padding:"8px 12px",border:`1px solid ${P.sky}`,fontSize:12,color:P.deep}}>
+              🩺 <strong>Clinical:</strong> {scenario.clinicalNote}
+            </div>
+            {mode==="beginner"&&(
+              <div style={{marginTop:10,borderTop:`1px solid ${P.border}`,paddingTop:10}}>
+                <button className="hov" onClick={()=>setShowHint(!showHint)} style={btn({background:P.lemon,color:P.deep,fontSize:12,padding:"5px 14px",borderRadius:20})}>
+                  {showHint?"🙈 Hide Hint":"💡 Show Hint"}
+                </button>
+                {showHint&&<p style={{color:"#7d5a00",fontSize:13,margin:"8px 0 0",background:`${P.lemon}88`,borderRadius:10,padding:"8px 12px"}}>💡 {scenario.hint}</p>}
+              </div>
+            )}
+          </div>
+
+          {/* Food Selector */}
+          <div style={cardStyle}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <h3 style={{margin:0,fontWeight:900,color:P.text,fontSize:15}}>🍽️ Build the Diet</h3>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:11,color:P.muted,fontStyle:"italic"}}>ℹ️ tap name for details</span>
+                <span style={{fontSize:12,color:selected.length===6?"#e74c3c":P.muted,fontWeight:700,background:selected.length===6?`${P.rose}88`:P.surface,borderRadius:20,padding:"3px 10px"}}>{selected.length}/6</span>
+              </div>
+            </div>
+
+            {/* Category filter */}
+            <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:10}}>
+              {categories.map(cat=>(
+                <button key={cat} onClick={()=>setFilterCategory(cat)} style={{fontSize:10,padding:"3px 10px",borderRadius:20,border:`1.5px solid ${filterCategory===cat?P.coral:P.border}`,background:filterCategory===cat?`${P.peach}66`:P.surface,color:filterCategory===cat?P.deep:P.muted,cursor:"pointer",fontWeight:700,fontFamily:"Nunito,sans-serif"}}>
+                  {cat}
+                </button>
+              ))}
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,maxHeight:320,overflowY:"auto"}}>
+              {filteredFoods.map(food=>{
+                const isSel=selected.includes(food);
+                const fd = FOODS[food];
+                const isJunk = fd?.category==="Junk Food";
+                return (
+                  <div key={food} style={{position:"relative"}}>
+                    <button className="foodbtn" onClick={()=>toggleFood(food)} style={{
+                      width:"100%",padding:"8px 10px",borderRadius:12,textAlign:"left",fontSize:11,fontWeight:isSel?800:600,
+                      border:`1.5px solid ${isSel?P.coral:isJunk?"#e74c3c44":P.border}`,
+                      background:isSel?`${P.peach}55`:isJunk?`${P.rose}22`:P.surface,
+                      color:isSel?P.deep:P.muted,cursor:(!isSel&&selected.length>=6)?"not-allowed":"pointer",
+                      opacity:(!isSel&&selected.length>=6)?0.4:1,
+                    }}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                        <span style={{lineHeight:1.4}}>{fd?.label||food}</span>
+                        {isSel&&<span style={{color:P.coral,flexShrink:0,marginLeft:4}}>✓</span>}
+                      </div>
+                      <div style={{marginTop:3,fontSize:10,color:isJunk?"#e74c3c":P.muted,opacity:0.85}}>
+                        {fd ? `${fd.calories}kcal · P:${fd.protein}g` : ""}
+                        {isJunk && " ⚠️"}
+                      </div>
+                    </button>
+                    {/* Info button */}
+                    <button onClick={(e)=>{e.stopPropagation();setDetailFood(food);}} style={{position:"absolute",top:4,right:isSel?22:4,width:16,height:16,borderRadius:"50%",background:P.border,border:"none",fontSize:9,cursor:"pointer",color:P.muted,fontWeight:900,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Nunito,sans-serif"}}>i</button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT: Tabs */}
+        <div>
+          <div style={{display:"flex",gap:6,marginBottom:12}}>
+            {[{id:"nutrients",label:"📊 Nutrients"},{id:"macros",label:"🔢 Macros"},{id:"foods",label:"🥗 My Plate"},{id:"ai",label:"🤖 AI Advice"}].map(t=>(
+              <button key={t.id} onClick={()=>setTab(t.id)} style={{
+                flex:1,padding:"8px 4px",borderRadius:12,border:`1.5px solid ${tab===t.id?P.coral:P.border}`,
+                background:tab===t.id?`${P.rose}44`:P.card,
+                color:tab===t.id?P.deep:P.muted,fontWeight:700,fontSize:11,cursor:"pointer",transition:"all 0.15s",
+              }}>{t.label}</button>
+            ))}
+          </div>
+
+          {tab==="nutrients"&&(
+            <div style={cardStyle}>
+              <h3 style={{margin:"0 0 14px",fontWeight:900,color:P.text,fontSize:15}}>📊 RDA Meter</h3>
+              {Object.keys(RDA_META).map(k=><NutrientBar key={k} id={k} value={nutrients[k]} target={targets[k]}/>)}
+              <div style={{marginTop:12,background:P.surface,borderRadius:12,padding:"9px 14px",border:`1px solid ${P.border}`,display:"flex",justifyContent:"space-between",fontSize:11,color:P.muted}}>
+                <span>❌ &lt;50%</span><span>⚡ 50–84%</span><span>✅ ≥85%</span>
+              </div>
+            </div>
+          )}
+
+          {tab==="macros"&&(
+            <div style={cardStyle}>
+              <h3 style={{margin:"0 0 14px",fontWeight:900,color:P.text,fontSize:15}}>🔢 Macronutrients</h3>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
+                {[
+                  {label:"Calories",val:Math.round(macros.calories),unit:"kcal",color:P.coral,ref:"~2000",emoji:"🔥"},
+                  {label:"Protein",val:Math.round(macros.protein),unit:"g",color:"#ddd4f7",ref:`RDA: ${targets.protein}g`,emoji:"💪"},
+                  {label:"Carbs",val:Math.round(macros.carbs),unit:"g",color:P.lemon,ref:"~250g",emoji:"🍞"},
+                  {label:"Fat",val:Math.round(macros.fat),unit:"g",color:P.peach,ref:"~65g",emoji:"🥑"},
+                  {label:"Fiber",val:Math.round(macros.fiber),unit:"g",color:P.sage,ref:"~25g",emoji:"🌿"},
+                ].map(m=>(
+                  <div key={m.label} style={{background:`${m.color}44`,borderRadius:14,padding:"10px 12px",border:`1.5px solid ${m.color}`}}>
+                    <div style={{fontSize:18}}>{m.emoji}</div>
+                    <div style={{fontWeight:900,color:P.text,fontSize:18,marginTop:2}}>{m.val}<span style={{fontSize:11,fontWeight:600}}>{m.unit}</span></div>
+                    <div style={{fontSize:10,color:P.muted,fontWeight:700}}>{m.label}</div>
+                    <div style={{fontSize:10,color:P.muted}}>{m.ref}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{background:`${P.sky}33`,borderRadius:12,padding:"10px 14px",fontSize:12,color:P.deep,border:`1px solid ${P.sky}`}}>
+                💡 <strong>Protein check:</strong> {Math.round(macros.protein)}/{targets.protein}g — {macros.protein>=targets.protein?"✅ Target met!":"❌ Need "+(targets.protein-Math.round(macros.protein))+"g more"}
+              </div>
+            </div>
+          )}
+
+          {tab==="foods"&&(
+            <div style={cardStyle}>
+              <h3 style={{margin:"0 0 14px",fontWeight:900,color:P.text,fontSize:15}}>🥗 My Plate</h3>
+              {selected.length===0?(
+                <div style={{textAlign:"center",padding:"28px 0",color:P.muted,fontSize:13}}>
+                  <div style={{fontSize:36,marginBottom:8}}>🍽️</div>
+                  Select up to 6 foods from the left →
+                </div>
+              ):selected.map(f=>{
+                const fd = FOODS[f];
+                const isJunk = fd?.category==="Junk Food";
+                return (
+                  <div key={f} style={{padding:"9px 12px",borderRadius:12,background:isJunk?`${P.rose}33`:P.surface,border:`1px solid ${isJunk?"#e74c3c44":P.border}`,marginBottom:7}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <span style={{fontSize:13,color:P.text,fontWeight:700}}>{fd?.label}</span>
+                      <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                        <button onClick={()=>setDetailFood(f)} style={{background:P.surface,border:`1px solid ${P.border}`,color:P.muted,cursor:"pointer",fontSize:10,borderRadius:8,padding:"2px 7px",fontWeight:700,fontFamily:"Nunito"}}>info</button>
+                        <button onClick={()=>toggleFood(f)} style={{background:`${P.rose}55`,border:`1px solid ${P.rose}`,color:P.coral,cursor:"pointer",fontSize:14,borderRadius:8,padding:"2px 8px",fontWeight:700}}>×</button>
+                      </div>
+                    </div>
+                    <div style={{fontSize:11,color:P.muted,marginTop:3,display:"flex",gap:10}}>
+                      <span>🔥 {fd?.calories}kcal</span>
+                      <span>💪 {fd?.protein}g protein</span>
+                      <span>🌿 {fd?.fiber}g fiber</span>
+                      {isJunk&&<span style={{color:"#e74c3c",fontWeight:700}}>⚠️ junk</span>}
+                    </div>
+                  </div>
+                );
+              })}
+              {submitted&&(
+                <div style={{marginTop:14,textAlign:"center",padding:"14px 0",borderTop:`1px solid ${P.border}`}}>
+                  <ScoreRing score={roundScore} size={80}/>
+                  <p style={{fontSize:13,color:P.muted,marginTop:6}}>Round Score</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {tab==="ai"&&(
+            <div style={cardStyle}>
+              <h3 style={{margin:"0 0 12px",fontWeight:900,color:P.text,fontSize:15}}>🤖 AI Nutritionist</h3>
+              {!submitted?(
+                <p style={{color:P.muted,fontSize:13,lineHeight:1.7,fontStyle:"italic"}}>
+                  Build a diet and submit to get personalised AI feedback for {scenario.name}!
+                </p>
+              ):aiLoading?(
+                <div style={{display:"flex",alignItems:"center",gap:10,color:P.deep,fontSize:13,padding:"8px 0"}}>
+                  <div style={{width:22,height:22,border:`3px solid ${P.mint}`,borderTopColor:P.coral,borderRadius:"50%",animation:"spin 0.8s linear infinite",flexShrink:0}}/>
+                  Analysing your diet plan...
+                </div>
+              ):(
+                <div style={{background:`${P.mint}44`,borderRadius:14,padding:"14px 16px",border:`1.5px solid ${P.mint}`}}>
+                  <p style={{color:P.deep,fontSize:13,lineHeight:1.8,margin:0}}>{aiFeedback}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div style={{marginTop:12}}>
+            {!submitted?(
+              <button className="hov" onClick={handleSubmit} disabled={selected.length===0} style={btn({
+                width:"100%",padding:"14px",borderRadius:14,
+                background:selected.length===0?P.border:`linear-gradient(135deg,${P.mint},${P.sky})`,
+                color:selected.length===0?P.muted:P.deep,fontSize:16,
+                cursor:selected.length===0?"not-allowed":"pointer",
+                boxShadow:selected.length===0?"none":`0 4px 18px ${P.mint}88`,
+              })}>Submit Diet ✓</button>
+            ):(
+              <button className="hov" onClick={nextScenario} style={btn({
+                width:"100%",padding:"14px",borderRadius:14,
+                background:`linear-gradient(135deg,${P.peach},${P.coral})`,
+                color:"white",fontSize:16,boxShadow:`0 4px 18px ${P.coral}66`,
+              })}>{scenarioIdx<SCENARIOS.length-1?"Next Patient →":"See Results 🏆"}</button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<NutritionGame />);
+</script>
+</body>
+</html>
